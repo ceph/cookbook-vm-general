@@ -1,0 +1,26 @@
+# AUTO-GENERATED with Chef, DO NOT EDIT
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet manual
+  pre-up /etc/network/rename-if-by-mac -- "$IFACE" <%= @macs['1g1'] %>
+  pre-up ip link set dev "$IFACE" up
+
+auto br-front
+iface br-front inet static
+  bridge_ports eth0
+  bridge_fd 9
+  bridge_hello 2
+  bridge_maxage 12
+  bridge_stp off
+  # "front" is special: instead of just the vlan trunk, it has a
+  # native vlan for PXE; this IP address is useful for SSH
+  address <%= @ips['front'] %>
+  netmask 255.255.240.0
+  gateway 10.214.128.1
+  dns-domain sepia.ceph.com
+  dns-search front.sepia.ceph.com
+  dns-nameservers 10.214.128.4 10.214.128.5

@@ -5,6 +5,12 @@ package 'ebtables'
 package 'python-vm-builder'
 
 include_recipe "cephco-generic::ssh-keys"
-include_recipe "cephco-generic::serial"
-include_recipe "cephco-generic::networking"
+
+if node['hostname'].match(/^mira/)
+  include_recipe "cephco-generic::networking-mira"
+else
+  include_recipe "cephco-generic::networking"
+end
+
 include_recipe "cephco-generic::libvirt"
+include_recipe "cephco-generic::libvirt-dns"

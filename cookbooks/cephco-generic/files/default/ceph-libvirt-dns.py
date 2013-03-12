@@ -5,10 +5,18 @@ import re
 import sys
 import time
 import datetime
+import traceback
+import sqlalchemy as sq
+import web
+import yaml
+import libvirt
+import json
+from lxml import etree
+import parser
 
-url = 'http://10.99.118.26:8080/'
+url = 'http://names.front.sepia.ceph.com:8080/'
 domain = 'front.sepia.ceph.com'
-sleepinterval = 30
+sleepinterval = 60
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -23,6 +31,11 @@ def parse_args():
         '--server',
         action='store_true', default=False,
         help='Run as the server (http/sql access).',
+        )
+    parser.add_argument(
+        'remainder',
+        nargs=argparse.REMAINDER,
+        help='Remainder arguments for webpy, ip:port for listen address'
         )
     args = parser.parse_args()
     return args
@@ -41,7 +54,14 @@ urls = (
     '/', 'index'
 )
 
-def add(leasefile, dburl, name, mac):
+def parseleases(s):
+    leases = {}
+    for l in parser.parse(s):
+        assert 'mac' in l
+        leases[l['mac']] = l
+    return leases
+
+def add(leases, dburl, name, mac):
     my_domain_id = 1
     db = sq.create_engine(dburl)
     metadata = sq.MetaData(bind=db)
@@ -59,37 +79,38 @@ def add(leasefile, dburl, name, mac):
                         sq.Column('propernoun_epoch', sq.Integer),
                         )
 
-    #Search for IP in DHCP leases
-    leases = open(leasefile).readlines()
-    ip = None
-    r = re.compile(mac)
-    for i in range(len(leases)):
-        if r.search(leases[i]):
-            ip=leases[max(0, i-6)].strip().split(' ')[1]
-
-    if ip is None:
-        returnstring = "Error: IP address not found from mac "+mac
-        return returnstring
+    ip = leases[mac]['ip']
+    existcheck = sq.select([records_table], records_table.c.name==name).limit(1).execute().fetchone()
+    if existcheck is None:
+        state = "Added"
+        ins = records_table.insert()
+        db.execute(ins, domain_id=my_domain_id, name=name, type="A", content=ip, ttl="30", auth="1")
     else:
-        existcheck = sq.select([records_table], records_table.c.name==name).limit(1).execute().fetchone()
-        if existcheck is None:
-            state = "Added"
-            ins = records_table.insert()
-            db.execute(ins, domain_id=my_domain_id, name=name, type="A", content=ip, ttl="30", auth="1")
+        if existcheck[4] == ip:
+            state = "No Change"
         else:
             state = "Updated"
             records_table.update().where(records_table.c.name==name).values(content=ip).execute()
-        returnstring = state+" hostname:"+name+" Mac:"+mac+" IP:"+ip
-        return returnstring
+    returnstring = "                 " + state + " HOSTNAME: "+name+" MAC: "+mac+" IP: "+ip
+    return returnstring
 
 class index:
     def GET(self):
-        i = web.input(name=None, mac=None)
-        if i.name is None:
-            string = "Nothing to do with received Data. Please send name and mac values in a GET request..."
-        else:
-            hostname=i.name+"."+domain
-            string=add(web.leasefile, web.dburl, name=hostname, mac=i.mac)
+        i = web.input()
+        s = open(web.leasefile).read()
+        leases = parseleases(s)
+        string = ''
+        for guest in i:
+            if '|' not in  i[guest]:
+                print "Client sent junk data"
+            else:
+                name = i[guest].split('|')[0]
+                mac = i[guest].split('|')[1]
+                hostname = name + '.' + domain
+                if mac in leases:
+                    string = string + '\n' + add(leases, web.dburl, name=hostname, mac=mac)
+                else:
+                    string = "Error: IP for: " + name + " not found from MAC: " + mac
         return string
 
 
@@ -143,7 +164,7 @@ def get_interfaces(tree):
         yield (name, mac)
 
 
-def _handle_event(conn, domain, event, detail):
+def _handle_event(conn, domain, event, detail, getstring):
     msg = dict(
         type='libvirt',
         vm=dict(
@@ -173,51 +194,73 @@ def _handle_event(conn, domain, event, detail):
         if 'front' in int:
             name = domain.name()
             mac = int[1]
-            update = requests.get(url+'?name='+name+'&mac='+mac)
-            update.raise_for_status()
-            print 'Server Response: '+update.content
+            getstring = getstring + name + '=' + name + '|' + mac + '&'
+    return getstring
 
-def libvirtlist():
+
+def libvirt_list_and_update_dns():
     uri = 'qemu:///system'
     try:
         conn = libvirt.openReadOnly(uri)
     except Exception:
         print "Something went wrong connecting to libvirt. Is libvirt-bin installed/running? Sleeping for 5 minutes"
-        time.sleep(500)
+        time.sleep(300)
         return
         pass
+
+    getstring = ''
+
     for domain in getAllDomains(conn):
-        _handle_event(
+        getstring = _handle_event(
             conn=conn,
             domain=domain,
             event=libvirt.VIR_DOMAIN_EVENT_DEFINED,
             detail=None,
+            getstring=getstring
             )
 
-if __name__ == "__main__":
+    getstring = getstring.rstrip('&')
+
+    if getstring == '':
+        print "Host has no guests with front network bridging. Not contacting server."
+        return
+
+    try:
+        update = requests.get(url + '?' + getstring)
+    except Exception:
+        print "Contacting the server failed. Is it down?  Sleeping for 5 minutes"
+        time.sleep(300)
+        return
+
+    try:
+        exception = update.raise_for_status()
+    except Exception:
+        print "Server response was abnormal (non 200) Sleeping for 5 minutes"
+        traceback.print_exc()
+        time.sleep(300)
+        return
+
+    print 'Server Response:'+update.content
+
+def main():
     args = parse_args()
 
     if args.server:
-        import sqlalchemy as sq
-        import web
-        import yaml
-
         print "Running in Server Mode:"
         config = read_config(args.config)
         web.dburl = config['database']
         web.leasefile = config['leasefile']
-
-        sys.argv = [s for s in sys.argv if s not in ('--server', '--config', args.config)]
+        # Webpy also uses Arguments. Replace sys.argv with argument 0 (script name) and add unused arguments by argparse)
+        sys.argv = [sys.argv[0]] + args.remainder
         app = web.application(urls, globals())
         app.run()
     else:
         print "Running in Client Mode:"
-        import libvirt
-        import json
-        from lxml import etree
         while True:
             print datetime.datetime.now()
-            libvirtlist()
+            libvirt_list_and_update_dns()
             print "Sleeping for "+str(sleepinterval)+" Seconds..."
             time.sleep(sleepinterval)
 
+if __name__ == "__main__":
+    main()
