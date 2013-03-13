@@ -1,0 +1,4 @@
+config:
+    database: 'mysql://username:password@hostname/databasename?charset=utf8&use_unicode=0'
+    leasefile: '/var/lib/dhcp/dhcpd.leases'
+
