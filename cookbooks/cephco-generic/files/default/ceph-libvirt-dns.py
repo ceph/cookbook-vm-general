@@ -13,6 +13,8 @@ import libvirt
 import json
 from lxml import etree
 import parser
+import os
+import subprocess
 
 url = 'http://names.front.sepia.ceph.com:8080/'
 domain = 'front.sepia.ceph.com'
@@ -110,10 +112,33 @@ class index:
                 if mac in leases:
                     string = string + '\n' + add(leases, web.dburl, name=hostname, mac=mac)
                 else:
-                    string = "Error: IP for: " + name + " not found from MAC: " + mac
+                    string = string + '\n                 ' + "Error: IP for: " + name + " not found from MAC: " + mac
         return string
 
 
+
+def getLXCstring():
+    returnstring = ""
+    dir = "/var/lib/lxc"
+    if os.path.exists(dir):
+        if os.listdir(dir):
+            for o in os.listdir(dir):
+                if os.path.isdir(dir + "/" + o):
+                    name = o
+                    if os.path.isfile(dir + "/" + o + "/config"):
+                        contents = open(dir + "/" + o + "/config").read()
+                        if "br-front" in contents:
+                            for line in open(dir + "/" + o + "/config").readlines():
+                                if re.search('lxc.network.hwaddr', line):
+                                    mac = line.split()[2]
+                                    lxcinfo = subprocess.Popen(['lxc-info', '-n', name] ,stdout=subprocess.PIPE).stdout.read()
+                                    if "RUNNING" in lxcinfo:
+                                        returnstring = returnstring + name + '=' + name + '|' + mac + '&'
+        else:
+             return returnstring
+    else:
+        return returnstring
+    return returnstring
 
 def getAllDomains(conn):
     """
@@ -220,6 +245,9 @@ def libvirt_list_and_update_dns():
             )
 
     getstring = getstring.rstrip('&')
+    lxcstring = getLXCstring().rstrip('&')
+    if lxcstring != '':
+        getstring = getstring + "&" + lxcstring
 
     if getstring == '':
         print "Host has no guests with front network bridging. Not contacting server."
