@@ -79,6 +79,35 @@ execute 'set up libvirt network front' do
 end
 
 
+if !node['hostname'].match(/^(mira)/)
+  cookbook_file '/srv/chef/libvirt-net-back.xml' do
+    owner 'root'
+    group 'root'
+    mode 0644
+  end
+
+  execute 'set up libvirt network back' do
+    command <<-'EOH'
+      set -e
+      if ! virsh net-uuid back >/dev/null 2>/dev/null; then
+        # does not exist
+        virsh net-define /srv/chef/libvirt-net-back.xml
+      fi
+      virsh -q net-info back | while read line; do
+        case "$line" in
+          Active:\ *no)
+            virsh net-start back
+            ;;
+          Autostart:\ *no)
+            virsh net-autostart back
+            ;;
+        esac
+      done
+    EOH
+  end
+end
+
+
 execute 'allow libvirt for user ubuntu' do
   command <<-'EOH'
     set -e
