@@ -13,6 +13,8 @@ import libvirt
 import json
 from lxml import etree
 import parser
+import os
+import subprocess 
 
 url = 'http://names.front.sepia.ceph.com:8080/'
 domain = 'front.sepia.ceph.com'
