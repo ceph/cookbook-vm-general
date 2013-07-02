@@ -13,12 +13,11 @@ import libvirt
 import json
 from lxml import etree
 import parser
-import os
-import subprocess
 
 url = 'http://names.front.sepia.ceph.com:8080/'
 domain = 'front.sepia.ceph.com'
-sleepinterval = 60
+sleepinterval = 40
+guestlist = []
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -59,8 +58,9 @@ urls = (
 def parseleases(s):
     leases = {}
     for l in parser.parse(s):
-        assert 'mac' in l
-        leases[l['mac']] = l
+        if 'mac' in l:
+            assert 'mac' in l
+            leases[l['mac']] = l
     return leases
 
 def add(leases, dburl, name, mac):
@@ -96,9 +96,32 @@ def add(leases, dburl, name, mac):
     returnstring = "                 " + state + " HOSTNAME: "+name+" MAC: "+mac+" IP: "+ip
     return returnstring
 
+def delete(dburl, name):
+    my_domain_id = 1
+    db = sq.create_engine(dburl)
+    metadata = sq.MetaData(bind=db)
+    records_table = sq.Table('records', metadata,
+                        sq.Column('id', sq.Integer, primary_key=True),
+                        sq.Column('domain_id', sq.Integer),
+                        sq.Column('name', sq.String),
+                        sq.Column('type', sq.String),
+                        sq.Column('content', sq.String),
+                        sq.Column('ttl', sq.Integer),
+                        sq.Column('prio', sq.Integer),
+                        sq.Column('change_date', sq.Integer),
+                        sq.Column('ordername', sq.String),
+                        sq.Column('auth', sq.Integer),
+                        sq.Column('propernoun_epoch', sq.Integer),
+                        )
+    state = 'Deleting'
+    records_table.delete().where(records_table.c.name==name).execute()
+    returnstring = "                 " + state + " HOSTNAME: "+name
+    return returnstring
+
 class index:
     def GET(self):
         i = web.input()
+        print i
         s = open(web.leasefile).read()
         leases = parseleases(s)
         string = ''
@@ -112,10 +135,12 @@ class index:
                 if mac in leases:
                     string = string + '\n' + add(leases, web.dburl, name=hostname, mac=mac)
                 else:
-                    string = string + '\n                 ' + "Error: IP for: " + name + " not found from MAC: " + mac
+                    #Delete entry mac string
+                    if mac == 'FF:FF:FF:FF:FF:FF':
+                        string = string + '\n' + delete(web.dburl, name=hostname)
+                    else:
+                        string = string + '\n                 ' + "Error: IP for: " + name + " not found from MAC: " + mac 
         return string
-
-
 
 def getLXCstring():
     returnstring = ""
@@ -220,29 +245,37 @@ def _handle_event(conn, domain, event, detail, getstring):
             name = domain.name()
             mac = int[1]
             getstring = getstring + name + '=' + name + '|' + mac + '&'
-    return getstring
+    return getstring, name
 
 
-def libvirt_list_and_update_dns():
+def libvirt_list_and_update_dns(guestlist):
     uri = 'qemu:///system'
     try:
         conn = libvirt.openReadOnly(uri)
     except Exception:
         print "Something went wrong connecting to libvirt. Is libvirt-bin installed/running? Sleeping for 5 minutes"
         time.sleep(300)
-        return
+        return False
         pass
 
     getstring = ''
+    deletestring = ''
 
+    guests = []
     for domain in getAllDomains(conn):
-        getstring = _handle_event(
+        getstring, guest = _handle_event(
             conn=conn,
             domain=domain,
             event=libvirt.VIR_DOMAIN_EVENT_DEFINED,
             detail=None,
             getstring=getstring
             )
+        guests.append(guest)
+
+    #If a guest was removed give it a fake mac so the server will delete the DNS entry
+    for guest in guestlist:
+        if guest not in guests:
+            getstring = getstring + guest + '=' + guest + '|FF:FF:FF:FF:FF:FF&'
 
     getstring = getstring.rstrip('&')
     lxcstring = getLXCstring().rstrip('&')
@@ -251,14 +284,14 @@ def libvirt_list_and_update_dns():
 
     if getstring == '':
         print "Host has no guests with front network bridging. Not contacting server."
-        return
+        return False, guests
 
     try:
         update = requests.get(url + '?' + getstring)
     except Exception:
         print "Contacting the server failed. Is it down?  Sleeping for 5 minutes"
         time.sleep(300)
-        return
+        return False, guests
 
     try:
         exception = update.raise_for_status()
@@ -266,11 +299,12 @@ def libvirt_list_and_update_dns():
         print "Server response was abnormal (non 200) Sleeping for 5 minutes"
         traceback.print_exc()
         time.sleep(300)
-        return
+        return False, guests
 
     print 'Server Response:'+update.content
+    return True, guests
 
-def main():
+def main(guestlist):
     args = parse_args()
 
     if args.server:
@@ -286,9 +320,13 @@ def main():
         print "Running in Client Mode:"
         while True:
             print datetime.datetime.now()
-            libvirt_list_and_update_dns()
+            updated, guestlist = libvirt_list_and_update_dns(guestlist)
+            if updated == False:
+                sleepinterval = 5
+            else:
+                sleepinterval = 40
             print "Sleeping for "+str(sleepinterval)+" Seconds..."
             time.sleep(sleepinterval)
 
 if __name__ == "__main__":
-    main()
+    main(guestlist)
