@@ -19,6 +19,27 @@ execute 'set up libvirt pool default' do
   EOH
 end
 
+# Remove default pool and crete vpm pools if vpm host:
+execute 'Setting up teuthology VM pools' do
+  command <<-'EOH'
+    set -e
+    if [ -d /srv/libvirtpool ]
+    then
+        cd /srv/libvirtpool
+        virsh pool-destroy default
+        virsh pool-undefine default
+        for pool in *
+        do
+            sudo virsh pool-define-as --name $pool --type dir --target /srv/libvirtpool/$pool
+            sudo virsh pool-autostart $pool
+            sudo virsh pool-build $pool
+            sudo virsh pool-start $pool
+        done
+    fi
+  EOH
+end
+
+
 directory '/srv/chef' do
   owner 'root'
   group 'root'
