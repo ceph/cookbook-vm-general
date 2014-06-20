@@ -16,7 +16,7 @@ import parser
 import os
 import subprocess 
 
-url = 'http://names.front.sepia.ceph.com:8080/'
+url = 'http://10.214.128.1:8080/'
 domain = 'front.sepia.ceph.com'
 sleepinterval = 40
 guestlist = []
