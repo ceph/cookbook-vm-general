@@ -243,8 +243,8 @@ def _handle_event(conn, domain, event, detail, getstring):
              )
         return
     for int in ifaces:
+        name = domain.name()
         if 'front' in int:
-            name = domain.name()
             mac = int[1]
             getstring = getstring + name + '=' + name + '|' + mac + '&'
     return getstring, name
