@@ -207,11 +207,18 @@ def getAllDomains(conn):
 
 
 def get_interfaces(tree):
-    networks = tree.xpath(
+    legacynetworks = tree.xpath(
         "/domain/devices/interface[@type='network']",
         )
-    for net in networks:
+    networks = tree.xpath(
+        "/domain/devices/interface[@type='bridge']",
+        )
+    for net in legacynetworks:
         (name,) = net.xpath('./source/@network')
+        (mac,) = net.xpath('./mac/@address')
+        yield (name, mac)
+    for net in networks:
+        (name,) = net.xpath('./source/@bridge')
         (mac,) = net.xpath('./mac/@address')
         yield (name, mac)
 
@@ -242,9 +249,10 @@ def _handle_event(conn, domain, event, detail, getstring):
                     )
              )
         return
+    name = ''
     for int in ifaces:
         name = domain.name()
-        if 'front' in int:
+        if 'front' or 'br-front' in int:
             mac = int[1]
             getstring = getstring + name + '=' + name + '|' + mac + '&'
     return getstring, name
