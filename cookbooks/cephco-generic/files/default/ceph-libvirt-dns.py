@@ -207,18 +207,11 @@ def getAllDomains(conn):
 
 
 def get_interfaces(tree):
-    legacynetworks = tree.xpath(
+    networks = tree.xpath(
         "/domain/devices/interface[@type='network']",
         )
-    networks = tree.xpath(
-        "/domain/devices/interface[@type='bridge']",
-        )
-    for net in legacynetworks:
-        (name,) = net.xpath('./source/@network')
-        (mac,) = net.xpath('./mac/@address')
-        yield (name, mac)
     for net in networks:
-        (name,) = net.xpath('./source/@bridge')
+        (name,) = net.xpath('./source/@network')
         (mac,) = net.xpath('./mac/@address')
         yield (name, mac)
 
@@ -232,7 +225,7 @@ def _handle_event(conn, domain, event, detail, getstring):
             ),
         )
     if event == libvirt.VIR_DOMAIN_EVENT_DEFINED:
-        xml_s = domain.XMLDesc(flags=0)
+        xml_s = domain.XMLDesc(flags=2)
         tree = etree.fromstring(xml_s)
         ifaces = get_interfaces(tree)
         ifaces = list(ifaces)
