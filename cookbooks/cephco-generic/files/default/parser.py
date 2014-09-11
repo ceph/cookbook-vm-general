@@ -31,6 +31,9 @@ _p_ip_address = Combine(Word(nums) - ('.' + Word(nums)) * 3)
 _p_lease_deleted = Literal("deleted")
 _p_lease_deleted.setParseAction(lambda s, loc, toks: True)
 
+_p_lease_active = Literal("binding state active")
+_p_lease_active.setParseAction(lambda s, loc, toks: True)
+
 _p_hex_digit = Word(hexnums, exact=2)
 _p_mac = Combine(
     _p_hex_digit + ':' + _p_hex_digit + ':' + _p_hex_digit + ':'
@@ -51,6 +54,7 @@ _p_lease_junk = (
 
 _p_lease_decl = (
     _p_lease_deleted.setResultsName('deleted')
+    | _p_lease_active.setResultsName('active')
     | _p_lease_hardware_ethernet.setResultsName('mac')
     | _p_lease_junk
     ) + Literal(';').suppress()

@@ -60,9 +60,10 @@ urls = (
 def parseleases(s):
     leases = {}
     for l in parser.parse(s):
-        if 'mac' in l:
-            assert 'mac' in l
-            leases[l['mac']] = l
+        if 'active' in l:
+            if 'mac' in l:
+                assert 'mac' in l
+                leases[l['mac']] = l
     return leases
 
 def add(leases, dburl, name, mac):
