@@ -6,7 +6,7 @@ package 'python-vm-builder'
 
 include_recipe "cephco-generic::ssh-keys"
 
-if node['hostname'].match(/^mira/)
+if node['hostname'].match(/^(mira|irvingi)/)
   include_recipe "cephco-generic::networking-mira"
 else
   include_recipe "cephco-generic::networking"

@@ -100,7 +100,7 @@ execute 'set up libvirt network front' do
 end
 
 
-if !node['hostname'].match(/^(mira)/)
+if !node['hostname'].match(/^(mira|irvingi)/)
   cookbook_file '/srv/chef/libvirt-net-back.xml' do
     owner 'root'
     group 'root'
