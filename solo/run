@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-for package in ruby1.9.1 ruby1.9.1-dev build-essential; do
+for package in chef ruby1.9.1 ruby1.9.1-dev build-essential; do
     if [ "$(dpkg --status -- $package|sed -n 's/^Status: //p')" != "install ok installed" ]; then
         # add a space after old values
         missing="${missing:+$missing }$package"
@@ -23,11 +23,5 @@ if [ -n "$missing" ]; then
 	$missing
 fi
 
-CHEF_BIN_DIR="${HOME}/.gem/ruby/1.9.1/bin"
-CHEF_BIN="$CHEF_BIN_DIR/chef-solo"
 
-if [ ! -e "$CHEF_BIN" ]; then
-    gem1.9.1 install --no-rdoc --no-ri --user-install chef
-fi
-
-sudo "$CHEF_BIN" -c solo.rb -j solo.json
+sudo chef-solo -c solo.rb -j solo.json
