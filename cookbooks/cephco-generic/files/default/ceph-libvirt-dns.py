@@ -145,6 +145,9 @@ class index:
                         string = string + '\n                 ' + "Error: IP for: " + name + " not found from MAC: " + mac 
         return string
 
+def is_gitbuilder(name):
+    return name.startswith('gitbuilder-')
+
 def getLXCstring():
     returnstring = ""
     dir = "/var/lib/lxc"
@@ -160,7 +163,7 @@ def getLXCstring():
                                 if re.search('lxc.network.hwaddr', line):
                                     mac = line.split()[2]
                                     lxcinfo = subprocess.Popen(['lxc-info', '-n', name] ,stdout=subprocess.PIPE).stdout.read()
-                                    if "RUNNING" in lxcinfo:
+                                    if "RUNNING" in lxcinfo and not is_gitbuilder(name):
                                         returnstring = returnstring + name + '=' + name + '|' + mac + '&'
         else:
              return returnstring
@@ -267,6 +270,8 @@ def libvirt_list_and_update_dns(guestlist):
 
     guests = []
     for domain in getAllDomains(conn):
+        if is_gitbuilder(guest)
+            continue
         getstring, guest = _handle_event(
             conn=conn,
             domain=domain,
